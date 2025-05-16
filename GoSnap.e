@@ -20,7 +20,6 @@ MODULE  'commodities',
         'exec/nodes',
         'exec/tasks',
         'exec/libraries',
-        'devices/timer',
         'gadtools',
         'intuition',
         'layers',
@@ -51,9 +50,6 @@ ENUM    ERR_NONE=0,
         ERR_CXERR,
         ERR_ECODE,
         ERR_SIGNAL,
-        ERR_TIMER_OPEN,
-        ERR_TIMER_MP,
-        ERR_TIMER_IO,
         ERR_NO_PUBSCREEN
 
 ENUM    POS_NONE,
@@ -75,19 +71,17 @@ DEF    bLeftButtonIsDown=FALSE
 DEF     exec=NIL:PTR TO execbase,  
         intuition=NIL:PTR TO intuitionbase
 
+DEF iSnapMargin=10, bKeepMenuBar=TRUE
+
 
 DEF broker_mp=NIL:PTR TO mp, 
-    broker=NIL, cxmsg=NIL,
+    broker=NIL, cxmsg=NIL, sig_broker,
     filter=NIL, sender=NIL, translate=NIL,
     bCommodityActive=TRUE,
     cocustom=NIL, signal=-1, cxobjsignal, cxsigflag, task, cosignal
 
 DEF ie:PTR TO inputevent
-DEF previewWnd=NIL:PTR TO window, bPreviewWindIsHidden=TRUE
 
-DEF timer_tr=NIL:PTR TO timerequest, 
-    timer_msgport=NIL:PTR TO mp,
-    timer_sig, second, micro
 
 DEF pubScreen=NIL:PTR TO screen,
     activeWindowOnScreen=NIL:PTR TO window
@@ -116,18 +110,33 @@ PROC main() HANDLE
     IF (iconbase:=OpenLibrary('icon.library', 39))=NIL THEN Raise(ERR_NOICON)
 
     IF (ttypes:=argArrayInit())=NIL THEN Raise(ERR_ARG_TT)
-    iCxPriority:=argInt(ttypes, 'CX_PRIORITY', 0)
 
+    iCxPriority:=argInt(ttypes, 'CX_PRIORITY', 0)
+    IF iCxPriority > 127  THEN iCxPriority := 127
+    IF iCxPriority < -128 THEN iCxPriority := -127
+
+    iSnapMargin:=argInt(ttypes, 'SNAP_MARGIN', 9)
+    IF iSnapMargin > 100 THEN iSnapMargin :=100
+    IF iSnapMargin < 2   THEN iSnapMargin := 2
+
+    
+    IF  StrCmp('YES', TrimStr(UpperStr(argString(ttypes, 'KEEP_MENUBAR', 'YES'))),3)
+        bKeepMenuBar:=TRUE
+    ELSE
+        bKeepMenuBar:=FALSE
+    ENDIF
+
+    ->WriteF('SNAP_MARGIN = \d\n', iSnapMargin)
 
     broker_mp:=CreateMsgPort()
     IF broker_mp=NIL THEN Raise(ERR_CREATE_BROKER_PORT)
-    cxsigflag:=Shl(1, broker_mp.sigbit)
+    sig_broker:=Shl(1, broker_mp.sigbit)
 
 
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
                    'GoSnap 1.0 by Krzysztof Donat',
-                   'Snaps windows to screen edges',
+                   'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
     
@@ -149,7 +158,6 @@ PROC main() HANDLE
 
     -> Set up the signal mask
     cxobjsignal:=Shl(1, signal)
-    cxsigflag:=cxsigflag OR cxobjsignal
 
     -> CxSignal takes two arguments, a pointer to the task to signal (normally
     -> the commodity) and the number of the signal bit the commodity acquired
@@ -159,53 +167,14 @@ PROC main() HANDLE
     AttachCxObj(cocustom, cosignal)
     ActivateCxObj(broker, TRUE)
 
-
-    /*   timer  init */ 
-    timer_msgport:=CreateMsgPort()    -> create port for timer
-    IF (timer_msgport = NIL) THEN Raise(ERR_TIMER_MP)
-    
-    timer_tr:=CreateIORequest(timer_msgport,SIZEOF timerequest)
-    IF (timer_tr = NIL) THEN Raise (ERR_TIMER_IO)
-
-    IF (OpenDevice('timer.device',UNIT_MICROHZ,timer_tr,0)<>NIL) THEN Raise (ERR_TIMER_OPEN)
-
-    timer_sig:=Shl(1, timer_msgport.sigbit)
-    cxsigflag:=cxsigflag OR timer_sig
-
-    timer_tr.io.command:=TR_ADDREQUEST     ->
-    timer_tr.time.secs:=3                   -> set timer request
-    timer_tr.time.micro:=0 ->1000000-micro     ->
-    SendIO(timer_tr)
-
-    /*  end timer */
-
     pubScreen:=LockPubScreen('Workbench')
     IF pubScreen=NIL THEN Raise(ERR_NO_PUBSCREEN)
-
-
-    previewWnd:= OpenW (0,0, 200, 400, 
-                        0, -> idcmp
-                        0, -> wflg
-                        NIL, ->title
-                        pubScreen, -> screen
-                        $F, -> open in workbench
-                        NIL, -> gadgets
-                        [WA_HIDDEN, TRUE, NIL] )
 
     processMessages()
 
     EXCEPT DO
 
-        IF previewWnd THEN CloseW(previewWnd)
         IF pubScreen THEN UnlockPubScreen(NIL, pubScreen)
-
-        IF timer_tr 
-            CloseDevice(timer_tr)
-            DeleteIORequest(timer_tr)
-        ENDIF
-    
-        IF timer_msgport THEN  DeleteMsgPort(timer_msgport)
-        
 
         
         IF signal<>-1 THEN FreeSignal(signal)
@@ -222,28 +191,44 @@ PROC main() HANDLE
         IF cxbase       THEN CloseLibrary(cxbase)
 
 
-        IF exception THEN WriteF('GoSnap error (\d) - ', exception)
         SELECT exception
-            CASE ERR_ARG_TT;        WriteF('could not init tooltype arg array\n')
-            CASE ERR_KICKSTART;     WriteF('needs Kickstart v47+ (OS 3.2 or higher)\n')	
-            CASE ERR_NOINTUITION;   WriteF('needs intuition.library v47+\n')
-            CASE ERR_NOCOMMODITY;   WriteF('needs commodities.library v39+\n')
-            CASE ERR_NOICON;        WriteF('needs icon.library v39+\n')
-            CASE ERR_CREATE_BROKER_PORT; WriteF('could not create broker port\n')
-            CASE ERR_CREATE_BROKER; WriteF('could not create broker - another instance of GoSnap is already running\n')
-            CASE ERR_CXERR;         WriteF('could not activate broker\n')
-            CASE ERR_ECODE;         WriteF('ran out of memory in eCodeCxCustom()\n')
-            CASE ERR_SIGNAL;        WriteF('could not allocate signal\n')
-            CASE ERR_TIMER_IO;      WriteF('could not allocate timer IO request\n')
-            CASE ERR_TIMER_MP;      WriteF('could not create timer port\n')
-            CASE ERR_TIMER_OPEN;    WriteF('could not open timer.device\n')
-            CASE ERR_NO_PUBSCREEN;  WriteF('could not lock public screen \aWorkbench\a\n')
+            CASE ERR_ARG_TT;        showError(exception, 'could not init tooltype arg array\n')
+            CASE ERR_KICKSTART;     showError(exception, 'needs Kickstart v47+ (OS 3.2 or higher)\n')	
+            CASE ERR_NOINTUITION;   showError(exception, 'needs intuition.library v47+\n')
+            CASE ERR_NOCOMMODITY;   showError(exception, 'needs commodities.library v39+\n')
+            CASE ERR_NOICON;        showError(exception, 'needs icon.library v39+\n')
+            CASE ERR_CREATE_BROKER_PORT; showError(exception, 'could not create broker port\n')
+            CASE ERR_CREATE_BROKER; showError(exception, 'could not create broker - another instance of GoSnap is already running\n')
+            CASE ERR_CXERR;         showError(exception, 'could not activate broker\n')
+            CASE ERR_ECODE;         showError(exception, 'ran out of memory in eCodeCxCustom()\n')
+            CASE ERR_SIGNAL;        showError(exception, 'could not allocate signal\n')
+            CASE ERR_NO_PUBSCREEN;  showError(exception, 'could not lock public screen \aWorkbench\a\n')
         
         
         ENDSELECT
 
 ENDPROC
 
+PROC showError(excp, strError)
+
+    DEF str
+
+    str:=String(150)
+
+    IF (str)
+
+        StringF(str, 'GoSnap error (\d) - \s', excp, strError )
+
+        IF wbmessage=NIL
+            WriteF(str)
+        ELSE
+            EasyRequestArgs(
+                NIL,[SIZEOF easystruct,0,'GoSnap',str,'Oh, no...'],0,0)
+        ENDIF
+        DisposeLink(str)
+    ENDIF
+
+ENDPROC
 
 PROC processMessages()
 
@@ -256,52 +241,39 @@ PROC processMessages()
 
     REPEAT
 
-        sigrcvd:=Wait(SIGBREAKF_CTRL_C OR cxsigflag)
-            
-        WHILE cxmsg:=GetMsg(broker_mp)
-            cxmsgid:=CxMsgID(cxmsg)
-            cxmsgtype:=CxMsgType(cxmsg)
-            ReplyMsg(cxmsg)
-            
-                SELECT cxmsgid
-                    CASE CXCMD_DISABLE
-                      ->      WriteF('CXCMD_DISABLE\n')
-                            ActivateCxObj(broker, FALSE)
-                            bCommodityActive:=FALSE
-                    CASE CXCMD_ENABLE
-                        ->    WriteF('CXCMD_ENABLE\n')
-                            ActivateCxObj(broker, TRUE)
-                            bCommodityActive:=TRUE
-                    CASE CXCMD_KILL
-                          ->      WriteF('CXCMD_KILL\n')
-                            done:=TRUE
-                        
-                 ENDSELECT
-        ENDWHILE
+        sigrcvd:=Wait(SIGBREAKF_CTRL_C OR sig_broker OR cxobjsignal)
+
+        IF sigrcvd AND sig_broker 
+
+            WHILE cxmsg:=GetMsg(broker_mp)
+                cxmsgid:=CxMsgID(cxmsg)
+                cxmsgtype:=CxMsgType(cxmsg)
+                ReplyMsg(cxmsg)
+                
+                    SELECT cxmsgid
+                        CASE CXCMD_DISABLE
+                        ->      WriteF('CXCMD_DISABLE\n')
+                                ActivateCxObj(broker, FALSE)
+                                bCommodityActive:=FALSE
+                        CASE CXCMD_ENABLE
+                            ->    WriteF('CXCMD_ENABLE\n')
+                                ActivateCxObj(broker, TRUE)
+                                bCommodityActive:=TRUE
+                        CASE CXCMD_KILL
+                            ->      WriteF('CXCMD_KILL\n')
+                                done:=TRUE
+                            
+                    ENDSELECT
+            ENDWHILE
+
+        ENDIF
 
         IF sigrcvd AND SIGBREAKF_CTRL_C 
             done:=TRUE
         ENDIF 
 
-        IF sigrcvd AND timer_sig 
-            
-            ->DisplayBeep(0)
-/*
-               IF bPreviewWindIsHidden=FALSE
-                    HideWindow(previewWnd)
-                    bPreviewWindIsHidden:=TRUE
-                ELSE
-                    ShowWindow(previewWnd, WINDOW_FRONTMOST)
-                    bPreviewWindIsHidden:=FALSE
-                ENDIF 
-*/
-            timer_tr.io.command:=TR_ADDREQUEST     ->
-            timer_tr.time.secs:=3                   -> set timer request
-            timer_tr.time.micro:=0 ->1000000-micro     ->
-            SendIO(timer_tr)
-        ENDIF
 
-        IF sigrcvd AND cxobjsignal 
+        IF sigrcvd AND cxobjsignal
     
             ->WriteF('Got Signal\n')
 
@@ -317,7 +289,7 @@ PROC processMessages()
 
                     activeWindowOnScreen:=findActiveWindow()
                     IF activeWindowOnScreen
-                        IF (isResizableWindow(activeWindowOnScreen))
+                        ->IF (isResizableWindow(activeWindowOnScreen))
                             wndDownButton:=activeWindowOnScreen
                             wndDownX:=wndDownButton.leftedge
                             wndDownY:=wndDownButton.topedge
@@ -325,7 +297,7 @@ PROC processMessages()
                             wndUpButton:=NIL
                             ->WriteF(' - Resizable window: \s', activeWindowOnScreen.title)
                         
-                        ENDIF
+                        ->ENDIF
                     ENDIF    
                     
                 ENDIF
@@ -363,9 +335,7 @@ PROC processMessages()
                     snapPosition:=getSnapPosision(pubScreen.mousex, pubScreen.mousey)
 
                     IF (snapPosition<>POS_NONE)
-
                         snapWindow(wndDownButton, snapPosition)
-
                     ENDIF
                         
 
@@ -379,30 +349,32 @@ PROC processMessages()
                     
                 ENDIF    
             ENDIF
-
-
-
            
         ENDIF
     UNTIL done
 
 
-    AbortIO(timer_tr)            -> end the last timer request
-    WaitIO(timer_tr)    
-
 ENDPROC
 
 PROC snapWindow(wnd:PTR TO window, snapPosition)
 
-DEF scrTop, scrLeft, scrRight, scrBottom
+    DEF scrTop, scrLeft, scrRight, scrBottom
 
-DEF newWidth, newHeight, newX, newY    
+    DEF newWidth, newHeight, newX, newY, iMenuBar=0, iGap=1
+
+    IF (bKeepMenuBar = TRUE)
+         iMenuBar   := pubScreen.barheight
+         iGap       := 1
+    ELSE
+        iMenuBar    := 0
+        iGap        := 0
+    ENDIF
 
     SELECT snapPosition
         CASE POS_LEFT_UP
 
             newWidth:=pubScreen.width /2
-            newHeight:=(pubScreen.height - pubScreen.barheight) /2
+            newHeight:=(pubScreen.height - iMenuBar) /2
             
             ->WriteF('0 newWidth: \d newHeight: \d\n', newWidth, newHeight)
 
@@ -416,14 +388,14 @@ DEF newWidth, newHeight, newX, newY
             ->WriteF('2 newWidth: \d newHeight: \d\n', newWidth, newHeight)
 
             newX:=pubScreen.leftedge
-            newY:=pubScreen.topedge+pubScreen.barheight +1
+            newY:=pubScreen.topedge+iMenuBar + iGap
             
             moveWindowToSnap(wnd, newX, newY, newWidth, newHeight)
 
         CASE POS_RIGHT_UP
 
             newWidth:=pubScreen.width /2
-            newHeight:=(pubScreen.height - pubScreen.barheight) /2
+            newHeight:=(pubScreen.height - iMenuBar) /2
             
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -431,14 +403,14 @@ DEF newWidth, newHeight, newX, newY
             IF newHeight < ($FFFF AND wnd.minheight) THEN newHeight:=($FFFF AND wnd.minheight)
             
             newX:=pubScreen.width - newWidth
-            newY:=pubScreen.topedge+pubScreen.barheight +1
+            newY:=pubScreen.topedge+iMenuBar +iGap
             
             moveWindowToSnap(wnd, newX, newY, newWidth, newHeight)
             
         CASE POS_LEFT_DOWN
             
             newWidth:=pubScreen.width /2
-            newHeight:=((pubScreen.height - pubScreen.barheight) /2)-1
+            newHeight:=((pubScreen.height - iMenuBar) /2)-iGap
 
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -453,7 +425,7 @@ DEF newWidth, newHeight, newX, newY
         CASE POS_RIGHT_DOWN
 
             newWidth:=pubScreen.width /2
-            newHeight:=((pubScreen.height - pubScreen.barheight) /2)-1
+            newHeight:=((pubScreen.height - iMenuBar) /2)-iGap
 
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -468,7 +440,7 @@ DEF newWidth, newHeight, newX, newY
         CASE POS_LEFT
             
             newWidth:=pubScreen.width /2
-            newHeight:=(pubScreen.height - pubScreen.barheight)-1
+            newHeight:=(pubScreen.height - iMenuBar)-iGap
 
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -476,14 +448,14 @@ DEF newWidth, newHeight, newX, newY
             IF newHeight < ($FFFF AND wnd.minheight) THEN newHeight:=($FFFF AND wnd.minheight)
             
             newX:=pubScreen.leftedge
-            newY:=pubScreen.topedge+pubScreen.barheight
+            newY:=pubScreen.topedge+iMenuBar
 
             moveWindowToSnap(wnd, newX, newY, newWidth, newHeight)
 
         CASE POS_RIGHT
 
             newWidth:=pubScreen.width /2
-            newHeight:=(pubScreen.height - pubScreen.barheight)-1
+            newHeight:=(pubScreen.height - iMenuBar)-iGap
 
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -491,7 +463,7 @@ DEF newWidth, newHeight, newX, newY
             IF newHeight < ($FFFF AND wnd.minheight) THEN newHeight:=($FFFF AND wnd.minheight)
             
             newX:=pubScreen.width-newWidth
-            newY:=pubScreen.topedge+pubScreen.barheight
+            newY:=pubScreen.topedge+iMenuBar
 
             moveWindowToSnap(wnd, newX, newY, newWidth, newHeight)
 
@@ -499,7 +471,7 @@ DEF newWidth, newHeight, newX, newY
             
             
             newWidth:=pubScreen.width
-            newHeight:=(pubScreen.height - pubScreen.barheight)-1
+            newHeight:=(pubScreen.height - iMenuBar)-iGap
 
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -507,14 +479,14 @@ DEF newWidth, newHeight, newX, newY
             IF newHeight < ($FFFF AND wnd.minheight) THEN newHeight:=($FFFF AND wnd.minheight)
             
             newX:=pubScreen.leftedge
-            newY:=pubScreen.topedge+pubScreen.barheight+1
+            newY:=pubScreen.topedge+iMenuBar+iGap
 
             moveWindowToSnap(wnd, newX, newY, newWidth, newHeight)
 
         CASE POS_DOWN
 
             newWidth:=pubScreen.width 
-            newHeight:=((pubScreen.height - pubScreen.barheight)/2)-1
+            newHeight:=((pubScreen.height - iMenuBar)/2)-iGap
             
             IF newWidth > ($FFFF AND wnd.maxwidth)  THEN newWidth:=($FFFF AND wnd.maxwidth)
             IF newWidth < ($FFFF AND wnd.minwidth)  THEN newWidth:=($FFFF AND wnd.minwidth)
@@ -527,7 +499,6 @@ DEF newWidth, newHeight, newX, newY
             moveWindowToSnap(wnd, newX, newY, newWidth, newHeight)
 
     ENDSELECT
-
 
 ENDPROC
 
@@ -544,17 +515,12 @@ ENDPROC
 
 
 PROC isWindowsStillOpen(wnd:PTR TO window)
-
     DEF w:PTR TO window
 
     w:=pubScreen.firstwindow
-
     WHILE w
-        
         IF (w=wnd) THEN RETURN TRUE
-        
         w:= w.nextwindow
-
     ENDWHILE
     
     RETURN FALSE
@@ -567,18 +533,10 @@ PROC cxFunction(cxm, co)
   -> Get the struct InputEvent associated with this CxMsg.  Unlike the
   -> InputEvent extracted from a CxSender's CxMsg, this is a *REAL* input
   -> event, be careful with it.
-  ie:=CxMsgData(cxm)
-
+    ie:=CxMsgData(cxm)
 
     IF (ie.class=IECLASS_RAWMOUSE)
-    
-      ->IF (ie.code =  IECODE_LBUTTON)
-
-        -> WriteF('Mouse event\n')
-      ->WriteF('Mouse event\n')
             DivertCxMsg(cxm, co, co)
-      ->ENDIF
-
     ENDIF
 
 ENDPROC
@@ -596,7 +554,6 @@ PROC findActiveWindow()
         IF ((_wnd.flags AND WFLG_WINDOWACTIVE ) = WFLG_WINDOWACTIVE )
             Permit()
             RETURN _wnd
-
         ENDIF
 
         _wnd:= _wnd.nextwindow
@@ -607,8 +564,7 @@ PROC findActiveWindow()
 
 ENDPROC
 
-
-/* Funkcja weryfikuje czy okno jest oknem Worlbencha, ale nie głownym*/
+/*
 PROC isWorkbenchWindow(wnd:PTR TO window)
 
     IF wnd=NIL THEN RETURN FALSE
@@ -633,9 +589,9 @@ PROC isWorkbenchWindow(wnd:PTR TO window)
     RETURN FALSE
 
 ENDPROC
+*/
+/*
 
-
-/* Funkcja weryfikuje czy okno jest oknem Worlbencha, ale nie głownym*/
 PROC isResizableWindow(wnd:PTR TO window)
 
     IF wnd=NIL THEN RETURN FALSE
@@ -650,14 +606,13 @@ PROC isResizableWindow(wnd:PTR TO window)
 
 ENDPROC
 
+*/
+
 PROC getSnapPosision(x, y)
 
     DEF snapPosition=POS_NONE
     DEF screenWidth, screenHeight
     DEF screenLeft, screenTop, screenRight, screenBottom
-
-
-    DEF iMargines=40
 
     screenWidth:=pubScreen.width
     screenHeight:=pubScreen.height
@@ -667,28 +622,28 @@ PROC getSnapPosision(x, y)
     
     ->WriteF('x,y: \d \d \n', x, y)
 
-    IF (x < iMargines) AND (y < iMargines)  THEN           
+    IF (x < iSnapMargin) AND (y < iSnapMargin)  THEN           
         RETURN POS_LEFT_UP
 
-    IF (x > (screenWidth-iMargines)) AND (y < iMargines) THEN               
+    IF (x > (screenWidth-iSnapMargin)) AND (y < iSnapMargin) THEN               
         RETURN POS_RIGHT_UP
 
-    IF (x < iMargines) AND (y > (screenHeight-iMargines)) THEN              
+    IF (x < iSnapMargin) AND (y > (screenHeight-iSnapMargin)) THEN              
         RETURN POS_LEFT_DOWN
 
-    IF (x > (screenWidth-iMargines)) AND (y > (screenHeight-iMargines)) THEN 
+    IF (x > (screenWidth-iSnapMargin)) AND (y > (screenHeight-iSnapMargin)) THEN 
         RETURN POS_RIGHT_DOWN
 
-    IF (x < iMargines) THEN                                         
+    IF (x < iSnapMargin) THEN                                         
         RETURN POS_LEFT
     
-    IF (x > (screenWidth-iMargines)) THEN 
+    IF (x > (screenWidth-iSnapMargin)) THEN 
         RETURN POS_RIGHT
     
-    IF (y < iMargines) THEN   
+    IF (y < iSnapMargin) THEN   
         RETURN POS_UP
     
-    IF (y > (screenHeight-iMargines)) THEN  
+    IF (y > (screenHeight-iSnapMargin)) THEN  
         RETURN POS_DOWN
     
     RETURN POS_NONE    
