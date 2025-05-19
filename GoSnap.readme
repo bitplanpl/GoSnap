@@ -2,7 +2,7 @@ Short:        Snaps windows to screen edges
 Uploader:     Krzysztof Donat (bitplan.pl@gmail.com)
 Author:       Krzysztof Donat (bitplan.pl@gmail.com)
 Type:         util/cdity
-Version:      0.13
+Version:      0.14
 Architecture: m68k-amigaos >= 3.1.4
 Distribution: Aminet
 
@@ -75,6 +75,9 @@ http://aminet.net/package/dev/e/evo
 History:
 0.13 (2025-05-18)
   - Initial release.
+
+0.14 (2025-05-19)
+  - fix for snapping non-resizable windows
 
 Thanks!
 	
