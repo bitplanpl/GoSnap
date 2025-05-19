@@ -1,40 +1,16 @@
-OPT PREPROCESS
-OPT LARGE
 
 MODULE  'commodities',
         'icon',
         'amigalib/argarray',
         'libraries/commodities',
-        'amigalib/lists',
         'intuition/screens',
         'intuition/intuition',
         'intuition/intuitionbase',
-        'libraries/gadtools',
-        'graphics/clip',
-        'graphics/layers',
-        'graphics/text', 
         'exec/ports',
-        'exec/execbase',
-        'exec/io',
-        'exec/lists',
-        'exec/nodes',
-        'exec/tasks',
         'exec/libraries',
-        'gadtools',
         'intuition',
-        'layers',
         'dos',
         'dos/dos',
-        'dos/dosextens',
-        'dos/dostags',
-        'dos/datetime',
-        'dos/filehandler',
-        'screennotify', 'libraries/screennotify',
-        'wb',
-        'workbench/startup',
-        'workbench/workbench',
-        'layers',
-        'graphics/layers',
         'devices/inputevent',
         'other/ecode'
 
@@ -62,23 +38,22 @@ ENUM    POS_NONE,
         POS_UP,
         POS_DOWN
 
-CONST OS_32_VERSION=47 -> OS 3.2
+CONST OS_314_VERSION=46 -> OS 3.1.4
 
 ENUM    EVENT_LEFTBUTTON=1
 
-DEF    bLeftButtonIsDown=FALSE
-
-DEF     exec=NIL:PTR TO execbase,  
-        intuition=NIL:PTR TO intuitionbase
-
-DEF iSnapMargin=10, bKeepMenuBar=TRUE
+DEF     bLeftButtonIsDown=FALSE,
+        bOS4=FALSE,
+        intuition=NIL:PTR TO intuitionbase,
+        iSnapMargin=10, 
+        bKeepMenuBar=TRUE, 
+        bShowSnapArea=FALSE
 
 
 DEF broker_mp=NIL:PTR TO mp, 
     broker=NIL, cxmsg=NIL, sig_broker,
-    filter=NIL, sender=NIL, translate=NIL,
     bCommodityActive=TRUE,
-    cocustom=NIL, signal=-1, cxobjsignal, cxsigflag, task, cosignal
+    cocustom=NIL, signal=-1, cxobjsignal, task, cosignal
 
 DEF ie:PTR TO inputevent
 
@@ -98,9 +73,9 @@ PROC main() HANDLE
         iCxPriority=0,
         cxfunc=NIL
 
-    IF (KickVersion(OS_32_VERSION)=FALSE) THEN Raise(ERR_KICKSTART)
+    IF (KickVersion(OS_314_VERSION)=FALSE) THEN Raise(ERR_KICKSTART)
+    IF KickVersion(51)  THEN bOS4:=TRUE
 
-    exec:=execbase
     intuition:=intuitionbase
     cxbase:=NIL
     iconbase:=NIL
@@ -126,6 +101,10 @@ PROC main() HANDLE
         bKeepMenuBar:=FALSE
     ENDIF
 
+    IF  StrCmp('YES', TrimStr(UpperStr(argString(ttypes, 'SHOW_SNAPAREA_AT_START', 'NO'))),3)
+        bShowSnapArea:=TRUE
+    ENDIF
+
     ->WriteF('SNAP_MARGIN = \d\n', iSnapMargin)
 
     broker_mp:=CreateMsgPort()
@@ -135,7 +114,7 @@ PROC main() HANDLE
 
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
-                   'GoSnap 1.0 by Krzysztof Donat',
+                   'GoSnap v0.13 by Krzysztof Donat',
                    'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
@@ -148,7 +127,9 @@ PROC main() HANDLE
     -> custom function.
     -> E-Note: eCodeCxCustom() protects an E function so you can use it as a
     ->         CX custom function
-    IF NIL=(cxfunc:=eCodeCxCustom({cxFunction})) THEN Raise(ERR_ECODE)
+    cxfunc:=eCodeCxCustom({cxFunction})
+    IF cxfunc=NIL THEN   Raise(ERR_ECODE)
+    
     cocustom:=CxCustom(cxfunc, 0)
     AttachCxObj(broker, cocustom)
 
@@ -169,6 +150,9 @@ PROC main() HANDLE
 
     pubScreen:=LockPubScreen('Workbench')
     IF pubScreen=NIL THEN Raise(ERR_NO_PUBSCREEN)
+
+
+    IF bShowSnapArea THEN showSnapAreaAtStart()
 
     processMessages()
 
@@ -193,8 +177,8 @@ PROC main() HANDLE
 
         SELECT exception
             CASE ERR_ARG_TT;        showError(exception, 'could not init tooltype arg array\n')
-            CASE ERR_KICKSTART;     showError(exception, 'needs Kickstart v47+ (OS 3.2 or higher)\n')	
-            CASE ERR_NOINTUITION;   showError(exception, 'needs intuition.library v47+\n')
+            CASE ERR_KICKSTART;     showError(exception, 'needs Kickstart v46+ (OS 3.1.4 or higher)\n')	
+            CASE ERR_NOINTUITION;   showError(exception, 'needs intuition.library v46+\n')
             CASE ERR_NOCOMMODITY;   showError(exception, 'needs commodities.library v39+\n')
             CASE ERR_NOICON;        showError(exception, 'needs icon.library v39+\n')
             CASE ERR_CREATE_BROKER_PORT; showError(exception, 'could not create broker port\n')
@@ -233,11 +217,7 @@ ENDPROC
 PROC processMessages()
 
     DEF  cxmsgid=0,  cxmsgtype=0, 
-    _abort=FALSE, mouseX=-1, mouseY=-1, sigrcvd, snapPosition=POS_NONE
-    
-
-
-    DEF done=FALSE
+    sigrcvd, snapPosition=POS_NONE, done=FALSE
 
     REPEAT
 
@@ -358,7 +338,6 @@ ENDPROC
 
 PROC snapWindow(wnd:PTR TO window, snapPosition)
 
-    DEF scrTop, scrLeft, scrRight, scrBottom
 
     DEF newWidth, newHeight, newX, newY, iMenuBar=0, iGap=1
 
@@ -508,7 +487,7 @@ PROC moveWindowToSnap(wnd:PTR TO window, newX, newY, newWidth, newHeight)
     
         IF (isWindowsStillOpen(wnd))
             ChangeWindowBox( wnd, newX, newY, newWidth, newHeight )
-            WindowToFront(wnd)
+            IF bOS4 THEN WindowToFront(wnd)
         ENDIF
     
 ENDPROC
@@ -564,55 +543,11 @@ PROC findActiveWindow()
 
 ENDPROC
 
-/*
-PROC isWorkbenchWindow(wnd:PTR TO window)
-
-    IF wnd=NIL THEN RETURN FALSE
-
-    IF (((wnd.flags AND WFLG_WBENCHWINDOW ) = WFLG_WBENCHWINDOW ) AND (wnd.parent <> NIL ))
-    
-        -> zabezpieczenie na TexEdit, Find, które ma ustawioną flagę WFLG_WBENCHWINDOW
-            IF wnd.userport
-                IF wnd.userport.sigtask
-                    IF wnd.userport.sigtask.ln
-                        IF wnd.userport.sigtask.ln.name
-                            ->WriteF('TASKNAME: \s, title: \s\n', wnd.userport.sigtask.ln.name, wnd.title)
-                            IF (StrCmp(wnd.userport.sigtask.ln.name, 'Workbench')) 
-                                RETURN TRUE
-                            ENDIF
-                        ENDIF
-                    ENDIF
-                ENDIF
-            ENDIF
-    ENDIF
-
-    RETURN FALSE
-
-ENDPROC
-*/
-/*
-
-PROC isResizableWindow(wnd:PTR TO window)
-
-    IF wnd=NIL THEN RETURN FALSE
-
-    IF ((wnd.flags AND WFLG_SIZEGADGET ) = WFLG_SIZEGADGET )
-     
-        RETURN TRUE
-    
-    ENDIF
-
-    RETURN FALSE
-
-ENDPROC
-
-*/
 
 PROC getSnapPosision(x, y)
 
-    DEF snapPosition=POS_NONE
     DEF screenWidth, screenHeight
-    DEF screenLeft, screenTop, screenRight, screenBottom
+    DEF screenLeft, screenTop
 
     screenWidth:=pubScreen.width
     screenHeight:=pubScreen.height
@@ -649,3 +584,87 @@ PROC getSnapPosision(x, y)
     RETURN POS_NONE    
 
 ENDPROC 
+
+PROC showSnapAreaAtStart()
+
+DEF winTopLeft=NIL, winTopRight=NIL, winDownLeft=NIL, winDownRight=NIL,
+    winTop=NIL, winDown=NIL, winLeft=NIL, winRight=NIL,
+    x,y, szer, wys
+
+    -> topLeft
+    x:=0
+    y:=0
+    szer:=iSnapMargin
+    wys:=iSnapMargin
+    winTopLeft:=drawSnapObszar(x, y, szer, wys, 1)
+
+    x:=pubScreen.width-iSnapMargin
+    y:=0
+    szer:=iSnapMargin
+    wys:=iSnapMargin
+    winTopRight:=drawSnapObszar(x, y, szer, wys, 1)
+
+    x:=0
+    y:=pubScreen.height-iSnapMargin
+    szer:=iSnapMargin
+    wys:=iSnapMargin
+    winDownLeft:=drawSnapObszar(x, y, szer, wys, 1)
+
+    x:=pubScreen.width-iSnapMargin
+    y:=pubScreen.height-iSnapMargin
+    szer:=iSnapMargin
+    wys:=iSnapMargin
+    winDownRight:=drawSnapObszar(x, y, szer, wys, 1)
+
+    x:=0+iSnapMargin
+    y:=0
+    szer:=pubScreen.width - (2*iSnapMargin)
+    wys:=iSnapMargin
+    winTop:=drawSnapObszar(x, y, szer, wys, 3)
+    
+    x:=0+iSnapMargin
+    y:=pubScreen.height - iSnapMargin
+    szer:=pubScreen.width - (2*iSnapMargin)
+    wys:=iSnapMargin
+    winDown:=drawSnapObszar(x, y, szer, wys, 3)
+
+    x:=0
+    y:=0+iSnapMargin
+    szer:=iSnapMargin
+    wys:=pubScreen.height-(2*iSnapMargin)
+    winLeft:=drawSnapObszar(x, y, szer, wys, 3)
+
+    x:=pubScreen.width-iSnapMargin
+    y:=0+iSnapMargin
+    szer:=iSnapMargin
+    wys:=pubScreen.height-(2*iSnapMargin)
+    winRight:=drawSnapObszar(x, y, szer, wys, 3)
+
+    Delay(50)
+
+    IF winTopLeft   THEN CloseW(winTopLeft)
+    IF winTopRight    THEN CloseW(winTopRight)
+    IF winDownLeft    THEN CloseW(winDownLeft)
+    IF winDownRight   THEN CloseW(winDownRight)
+    IF winTop    THEN CloseW(winTop)
+    IF winDown    THEN CloseW(winDown)
+    IF winLeft   THEN CloseW(winLeft)
+    IF winRight    THEN CloseW(winRight)
+
+
+ENDPROC
+
+
+PROC drawSnapObszar(x, y, szer, wys, kol)
+
+    DEF win=NIL:PTR TO window
+
+    ->win := OpenW(x,y,wid,hgt,idcmp,wflgs,title,scrn,sflgs,gads,tags=NIL) 
+    win := OpenW(x,y,szer,wys,NIL,WFLG_BORDERLESS,NIL,NIL,1,NIL,NIL)
+    Box(0,0, szer, wys, kol)
+
+
+ENDPROC win
+
+version:
+CHAR '$VER: GoSnap 0.13 (18.05.2025) http://www.bitplan.pl/gosnap',0
