@@ -45,7 +45,9 @@ ENUM    EVENT_LEFTBUTTON=1
 DEF     bLeftButtonIsDown=FALSE,
         bOS4=FALSE,
         intuition=NIL:PTR TO intuitionbase,
-        iSnapMargin=10, 
+        iSnapMarginWidth=10, 
+        iSnapMarginHeight=10, 
+        iSnapMarginPercent=3,
         bKeepMenuBar=TRUE, 
         bShowSnapArea=FALSE
 
@@ -80,6 +82,11 @@ PROC main() HANDLE
     cxbase:=NIL
     iconbase:=NIL
 
+
+    pubScreen:=LockPubScreen('Workbench')
+    IF pubScreen=NIL THEN Raise(ERR_NO_PUBSCREEN)
+
+
     IF (intuition.libnode.version <46 ) THEN Raise(ERR_NOINTUITION)
     IF (cxbase:=OpenLibrary('commodities.library', 39))=NIL THEN Raise(ERR_NOCOMMODITY)
     IF (iconbase:=OpenLibrary('icon.library', 39))=NIL THEN Raise(ERR_NOICON)
@@ -90,9 +97,31 @@ PROC main() HANDLE
     IF iCxPriority > 127  THEN iCxPriority := 127
     IF iCxPriority < -128 THEN iCxPriority := -127
 
-    iSnapMargin:=argInt(ttypes, 'SNAP_MARGIN', 9)
-    IF iSnapMargin > 100 THEN iSnapMargin :=100
-    IF iSnapMargin < 2   THEN iSnapMargin := 2
+    -> default snapMargin as 3% of screen size
+    
+
+    iSnapMarginWidth:=argInt(ttypes, 'SNAP_MARGIN', -1)
+    IF iSnapMarginWidth <> -1
+        IF iSnapMarginWidth > 100 THEN iSnapMarginWidth :=100
+        IF iSnapMarginWidth < 2   THEN iSnapMarginWidth := 2
+        iSnapMarginHeight:= iSnapMarginWidth
+    ELSE
+        iSnapMarginWidth:= (($FFFF AND pubScreen.width)* 3)/100
+        iSnapMarginHeight:= (($FFFF AND pubScreen.height) * 3)/100
+    
+    ENDIF
+
+    iSnapMarginPercent:=argInt(ttypes, 'SNAP_MARGINPCT', -1)
+    IF (iSnapMarginPercent > 0) AND (iSnapMarginPercent <=15)  
+        iSnapMarginWidth:= (($FFFF AND pubScreen.width)* iSnapMarginPercent)/100
+        iSnapMarginHeight:= (($FFFF AND pubScreen.height) * iSnapMarginPercent)/100
+    ENDIF
+
+
+
+    ->WriteF('iSnapMarginWidth: \d\n', iSnapMarginWidth)
+    ->WriteF('iSnapMarginHeight: \d\n', iSnapMarginHeight)
+    
 
     
     IF  StrCmp('YES', TrimStr(UpperStr(argString(ttypes, 'KEEP_MENUBAR', 'YES'))),3)
@@ -114,7 +143,7 @@ PROC main() HANDLE
 
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
-                   'GoSnap v0.14 by Krzysztof Donat',
+                   'GoSnap v0.15 by Krzysztof Donat',
                    'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
@@ -148,17 +177,15 @@ PROC main() HANDLE
     AttachCxObj(cocustom, cosignal)
     ActivateCxObj(broker, TRUE)
 
-    pubScreen:=LockPubScreen('Workbench')
-    IF pubScreen=NIL THEN Raise(ERR_NO_PUBSCREEN)
+    
 
-
-    IF bShowSnapArea THEN showSnapAreaAtStart()
+    ->IF bShowSnapArea THEN 
+    showSnapAreaAtStart()
 
     processMessages()
 
     EXCEPT DO
 
-        IF pubScreen THEN UnlockPubScreen(NIL, pubScreen)
 
         
         IF signal<>-1 THEN FreeSignal(signal)
@@ -173,6 +200,8 @@ PROC main() HANDLE
         IF ttypes       THEN argArrayDone()
         IF iconbase     THEN CloseLibrary(iconbase)
         IF cxbase       THEN CloseLibrary(cxbase)
+
+        IF pubScreen THEN UnlockPubScreen(NIL, pubScreen)
 
 
         SELECT exception
@@ -354,6 +383,11 @@ PROC snapWindow(wnd:PTR TO window, snapPosition)
             newWidth:=pubScreen.width /2
             newHeight:=(pubScreen.height - iMenuBar) /2
             
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
+            
             newX:=pubScreen.leftedge
             newY:=pubScreen.topedge+iMenuBar + iGap
             
@@ -361,7 +395,12 @@ PROC snapWindow(wnd:PTR TO window, snapPosition)
 
             newWidth:=pubScreen.width /2
             newHeight:=(pubScreen.height - iMenuBar) /2
-
+            
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
+            
             newX:=pubScreen.width - newWidth
             newY:=pubScreen.topedge+iMenuBar +iGap
                         
@@ -369,6 +408,11 @@ PROC snapWindow(wnd:PTR TO window, snapPosition)
             
             newWidth:=pubScreen.width /2
             newHeight:=((pubScreen.height - iMenuBar) /2)-iGap
+
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
             
             newX:=pubScreen.leftedge
             newY:=pubScreen.height - newHeight
@@ -378,53 +422,79 @@ PROC snapWindow(wnd:PTR TO window, snapPosition)
             newWidth:=pubScreen.width /2
             newHeight:=((pubScreen.height - iMenuBar) /2)-iGap
 
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
+            
             newX:=pubScreen.width - newWidth 
             newY:=pubScreen.height-newHeight
+            
+            
 
         CASE POS_LEFT
             
             newWidth:=pubScreen.width /2
             newHeight:=(pubScreen.height - iMenuBar)-iGap
-            
+
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
+
             newX:=pubScreen.leftedge
-            newY:=pubScreen.topedge+iMenuBar
+            newY:=((pubScreen.height-iMenuBar-newHeight)/2)+iMenuBar+iGap
 
         CASE POS_RIGHT
 
             newWidth:=pubScreen.width /2
             newHeight:=(pubScreen.height - iMenuBar)-iGap
+
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
             
+
             newX:=pubScreen.width-newWidth
-            newY:=pubScreen.topedge+iMenuBar
+            newY:=((pubScreen.height-iMenuBar-newHeight)/2)+iMenuBar+iGap
 
         CASE POS_UP
 
             newWidth:=pubScreen.width
             newHeight:=(pubScreen.height - iMenuBar)-iGap
+
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
             
-            newX:=pubScreen.leftedge
+            
+            newX:=(pubScreen.width-newWidth)/2
             newY:=pubScreen.topedge+iMenuBar+iGap
 
         CASE POS_DOWN
 
             newWidth:=pubScreen.width 
             newHeight:=((pubScreen.height - iMenuBar)/2)-iGap
-      
-            newX:=pubScreen.leftedge
+
+            IF newWidth > maxWidth  THEN newWidth:=maxWidth
+            IF newWidth < minWidth  THEN newWidth:=minWidth
+            IF newHeight > maxHeight THEN newHeight:=maxHeight
+            IF newHeight < minHeigth THEN newHeight:=minHeigth
+            
+            newX:=(pubScreen.width-newWidth)/2
             newY:=pubScreen.height - newHeight
             
     ENDSELECT
 
-    IF newWidth > maxWidth  THEN newWidth:=maxWidth
-    IF newWidth < minWidth  THEN newWidth:=minWidth
-    IF newHeight > maxHeight THEN newHeight:=maxHeight
-    IF newHeight < minHeigth THEN newHeight:=minHeigth
     
     IF (isWindowsStillOpen(wnd))
         ChangeWindowBox( wnd, newX, newY, newWidth, newHeight )
         IF bOS4 THEN WindowToFront(wnd)
     ENDIF
 
+    ->WriteF('menuBar: \d\n', iMenuBar)
 ENDPROC
 
 
@@ -498,28 +568,28 @@ PROC getSnapPosision(x, y)
     
     ->WriteF('x,y: \d \d \n', x, y)
 
-    IF (x < iSnapMargin) AND (y < iSnapMargin)  THEN           
+    IF (x < iSnapMarginWidth) AND (y < iSnapMarginHeight)  THEN           
         RETURN POS_LEFT_UP
 
-    IF (x > (screenWidth-iSnapMargin)) AND (y < iSnapMargin) THEN               
+    IF (x > (screenWidth-iSnapMarginWidth)) AND (y < iSnapMarginHeight) THEN               
         RETURN POS_RIGHT_UP
 
-    IF (x < iSnapMargin) AND (y > (screenHeight-iSnapMargin)) THEN              
+    IF (x < iSnapMarginWidth) AND (y > (screenHeight-iSnapMarginHeight)) THEN              
         RETURN POS_LEFT_DOWN
 
-    IF (x > (screenWidth-iSnapMargin)) AND (y > (screenHeight-iSnapMargin)) THEN 
+    IF (x > (screenWidth-iSnapMarginWidth)) AND (y > (screenHeight-iSnapMarginHeight)) THEN 
         RETURN POS_RIGHT_DOWN
 
-    IF (x < iSnapMargin) THEN                                         
+    IF (x < iSnapMarginWidth) THEN                                         
         RETURN POS_LEFT
     
-    IF (x > (screenWidth-iSnapMargin)) THEN 
+    IF (x > (screenWidth-iSnapMarginWidth)) THEN 
         RETURN POS_RIGHT
     
-    IF (y < iSnapMargin) THEN   
+    IF (y < iSnapMarginHeight) THEN   
         RETURN POS_UP
     
-    IF (y > (screenHeight-iSnapMargin)) THEN  
+    IF (y > (screenHeight-iSnapMarginHeight)) THEN  
         RETURN POS_DOWN
     
     RETURN POS_NONE    
@@ -535,50 +605,50 @@ DEF winTopLeft=NIL, winTopRight=NIL, winDownLeft=NIL, winDownRight=NIL,
     -> topLeft
     x:=0
     y:=0
-    width:=iSnapMargin
-    height:=iSnapMargin
+    width:=iSnapMarginWidth
+    height:=iSnapMarginHeight
     winTopLeft:=drawSnapArea(x, y, width, height, 1)
 
-    x:=pubScreen.width-iSnapMargin
+    x:=pubScreen.width-iSnapMarginWidth
     y:=0
-    width:=iSnapMargin
-    height:=iSnapMargin
+    width:=iSnapMarginWidth
+    height:=iSnapMarginHeight
     winTopRight:=drawSnapArea(x, y, width, height, 1)
 
     x:=0
-    y:=pubScreen.height-iSnapMargin
-    width:=iSnapMargin
-    height:=iSnapMargin
+    y:=pubScreen.height-iSnapMarginHeight
+    width:=iSnapMarginWidth
+    height:=iSnapMarginHeight
     winDownLeft:=drawSnapArea(x, y, width, height, 1)
 
-    x:=pubScreen.width-iSnapMargin
-    y:=pubScreen.height-iSnapMargin
-    width:=iSnapMargin
-    height:=iSnapMargin
+    x:=pubScreen.width-iSnapMarginWidth
+    y:=pubScreen.height-iSnapMarginHeight
+    width:=iSnapMarginWidth
+    height:=iSnapMarginHeight
     winDownRight:=drawSnapArea(x, y, width, height, 1)
 
-    x:=0+iSnapMargin
+    x:=0+iSnapMarginWidth
     y:=0
-    width:=pubScreen.width - (2*iSnapMargin)
-    height:=iSnapMargin
+    width:=pubScreen.width - (2*iSnapMarginWidth)
+    height:=iSnapMarginHeight
     winTop:=drawSnapArea(x, y, width, height, 3)
     
-    x:=0+iSnapMargin
-    y:=pubScreen.height - iSnapMargin
-    width:=pubScreen.width - (2*iSnapMargin)
-    height:=iSnapMargin
+    x:=0+iSnapMarginWidth
+    y:=pubScreen.height - iSnapMarginHeight
+    width:=pubScreen.width - (2*iSnapMarginWidth)
+    height:=iSnapMarginHeight
     winDown:=drawSnapArea(x, y, width, height, 3)
 
     x:=0
-    y:=0+iSnapMargin
-    width:=iSnapMargin
-    height:=pubScreen.height-(2*iSnapMargin)
+    y:=0+iSnapMarginHeight
+    width:=iSnapMarginWidth
+    height:=pubScreen.height-(2*iSnapMarginHeight)
     winLeft:=drawSnapArea(x, y, width, height, 3)
 
-    x:=pubScreen.width-iSnapMargin
-    y:=0+iSnapMargin
-    width:=iSnapMargin
-    height:=pubScreen.height-(2*iSnapMargin)
+    x:=pubScreen.width-iSnapMarginWidth
+    y:=0+iSnapMarginHeight
+    width:=iSnapMarginWidth
+    height:=pubScreen.height-(2*iSnapMarginHeight)
     winRight:=drawSnapArea(x, y, width, height, 3)
 
     Delay(50)
@@ -608,4 +678,4 @@ PROC drawSnapArea(x, y, width, height, color)
 ENDPROC win
 
 version:
-CHAR '$VER: GoSnap 0.14 (19.05.2025) http://www.bitplan.pl/gosnap',0
+CHAR '$VER: GoSnap 0.15 (20.05.2025) http://www.bitplan.pl/gosnap',0

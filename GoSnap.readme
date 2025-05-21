@@ -55,7 +55,15 @@ the program behaves:
       or if it should always remain visible.
 
     * SNAP_MARGIN=10 - defines the size (in pixels) of the screen-edge 
-      area where window snapping is triggered.
+      area where window snapping is triggered (int, range: 2-100)
+
+    * SNAP_MARGINPCT=3 - a parameter that defines the width and height 
+      of the snap area as a percentage of the screen’s width and height.
+      For example, on an 800×600 screen and with the parameter set to 3, 
+      the snap area near the left and right edges will be 24 pixels wide, 
+      and 18 pixels high near the top and bottom edges (int, range: 1-15).
+      If both parameters are defined (SNAP_MARGIN and SNAP_MARGINPCT), 
+      SNAP_MARGINPCT takes priority over SNAP_MARGIN.
 
     * SHOW_SNAP_AREA_AT_START=YES|NO - a test feature that displays defined 
       snap zones when the program starts.
@@ -79,5 +87,10 @@ History:
 0.14 (2025-05-19)
   - fix for snapping non-resizable windows
 
+0.15 (2025-05-20)
+  - Added ToolType parameter SNAP_MARGINPCT, defining the snap area 
+    as a percentage of the screen width/height.
+  - improved calculation of snapped window positions.
+  
 Thanks!
 	
