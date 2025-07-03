@@ -83,7 +83,7 @@ PROC main() HANDLE
     iconbase:=NIL
 
 
-    pubScreen:=LockPubScreen('Workbench')
+    pubScreen:=LockPubScreen(NIL)
     IF pubScreen=NIL THEN Raise(ERR_NO_PUBSCREEN)
 
 
@@ -143,7 +143,7 @@ PROC main() HANDLE
 
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
-                   'GoSnap v0.15 by Krzysztof Donat',
+                   'GoSnap v0.16 by Krzysztof Donat',
                    'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
@@ -245,8 +245,9 @@ ENDPROC
 
 PROC processMessages()
 
-    DEF  cxmsgid=0,  cxmsgtype=0, 
-    sigrcvd, snapPosition=POS_NONE, done=FALSE
+    DEF  cxmsgid=0,  cxmsgtype=0, strTMP[256]:STRING,
+    sigrcvd, snapPosition=POS_NONE, done=FALSE, fhNIL, fhStd
+
 
     REPEAT
 
@@ -295,6 +296,9 @@ PROC processMessages()
                             wndDownX:=wndDownButton.leftedge
                             wndDownY:=wndDownButton.topedge
 
+                                                  
+                            ->StringF(strTMP, '0 wndDown: \h (\d, \d) \s\n', wndDownButton, wndDownX, wndDownY, wndDownButton.title)
+                            ->zaloguj(strTMP)
                             wndUpButton:=NIL
                     ENDIF    
                     
@@ -302,6 +306,8 @@ PROC processMessages()
             ELSE
                 IF (bLeftButtonIsDown) 
                     
+                    Delay(5) -> oddaj czas Amidze, nich zaktualizuje liste systemowych okien
+
                     bLeftButtonIsDown:=FALSE
 
                     activeWindowOnScreen:=findActiveWindow()
@@ -312,6 +318,9 @@ PROC processMessages()
                                 wndUpX:=wndUpButton.leftedge
                                 wndUpY:=wndUpButton.topedge
                             
+                                ->Delay(1)
+                                ->StringF(strTMP,'0 wndUp: \h (\d, \d) \s\n', wndUpButton, wndUpX, wndUpY, wndUpButton.title)
+                                ->zaloguj(strTMP)
                             ENDIF
                     ENDIF
                     
@@ -320,32 +329,52 @@ PROC processMessages()
 
             -> After releasing the mouse button, is the same window still active?
             IF (wndDownButton  AND (wndDownButton=wndUpButton))
-                
+                ->Delay(1)
+                ->WriteF('releasing:  wndDownButton=wndUpButton\n')
                 -> Did the window's position change?
                 IF (wndDownX<>wndUpX) OR (wndDownY<>wndUpY)
-                    
+                    ->WriteF('releasing:  wndDownX<>wndUpX\n')
                     -> Was the mouse cursor in the snapping zone?
                     snapPosition:=getSnapPosision(pubScreen.mousex, pubScreen.mousey)
-
+                    ->WriteF('releasing:  snapPosition: \d\n', snapPosition)
                     IF (snapPosition<>POS_NONE)
                         -> Then it’s a snap!
+                        ->WriteF('releasing:  SNAP!\n')
+                    
                         snapWindow(wndDownButton, snapPosition)
                     ENDIF
                         
-                    wndDownButton:=NIL
-                    wndUpButton:=NIL
-                    wndDownX:=-1
-                    wndUpX:=-1
-                    wndDownY:=-1
-                    wndUpY:=-1
-
                     
-                ENDIF    
+                          
+                ENDIF
+
+                wndDownButton:=NIL
+                wndUpButton:=NIL
+                wndDownX:=-1
+                wndUpX:=-1
+                wndDownY:=-1
+                wndUpY:=-1
+
+
             ENDIF
+
            
         ENDIF
     UNTIL done
 
+
+ENDPROC
+
+PROC zaloguj(str)
+
+DEF fh=NIL
+
+    IF fh:=Open('RAM:gosnap.log', MODE_READWRITE)
+			Seek (fh, 0, OFFSET_END)
+			Write(fh, str, StrLen(str) );
+			Close(fh)
+            fh:=NIL
+	ENDIF
 
 ENDPROC
 
@@ -678,4 +707,4 @@ PROC drawSnapArea(x, y, width, height, color)
 ENDPROC win
 
 version:
-CHAR '$VER: GoSnap 0.15 (20.05.2025) http://www.bitplan.pl/gosnap',0
+CHAR '$VER: GoSnap 0.16 (01.07.2025) http://www.bitplan.pl/gosnap',0

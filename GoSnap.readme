@@ -2,7 +2,8 @@ Short:        Snaps windows to screen edges
 Uploader:     Krzysztof Donat (bitplan.pl@gmail.com)
 Author:       Krzysztof Donat (bitplan.pl@gmail.com)
 Type:         util/cdity
-Version:      0.14
+Version:      0.16
+Date:         01-07-2025
 Architecture: m68k-amigaos >= 3.1.4
 Distribution: Aminet
 
@@ -91,6 +92,9 @@ History:
   - Added ToolType parameter SNAP_MARGINPCT, defining the snap area 
     as a percentage of the screen width/height.
   - improved calculation of snapped window positions.
-  
+
+0.16 (2025-07-01)
+  - fix for window dragging detection
+
 Thanks!
 	
