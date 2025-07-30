@@ -143,7 +143,7 @@ PROC main() HANDLE
 
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
-                   'GoSnap v0.16 by Krzysztof Donat',
+                   'GoSnap v0.17 by Krzysztof Donat',
                    'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
@@ -179,8 +179,7 @@ PROC main() HANDLE
 
     
 
-    ->IF bShowSnapArea THEN 
-    showSnapAreaAtStart()
+    IF bShowSnapArea=TRUE THEN showSnapAreaAtStart()
 
     processMessages()
 
@@ -707,4 +706,4 @@ PROC drawSnapArea(x, y, width, height, color)
 ENDPROC win
 
 version:
-CHAR '$VER: GoSnap 0.16 (01.07.2025) http://www.bitplan.pl/gosnap',0
+CHAR '$VER: GoSnap 0.17 (30.07.2025) http://www.bitplan.pl/amiga',0

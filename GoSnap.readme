@@ -2,8 +2,9 @@ Short:        Snaps windows to screen edges
 Uploader:     Krzysztof Donat (bitplan.pl@gmail.com)
 Author:       Krzysztof Donat (bitplan.pl@gmail.com)
 Type:         util/cdity
-Version:      0.16
-Date:         01-07-2025
+Replaces:     util/cdity/GoSnap.lha
+Version:      0.17
+Date:         30-07-2025
 Architecture: m68k-amigaos >= 3.1.4
 Distribution: Aminet
 
@@ -95,6 +96,10 @@ History:
 
 0.16 (2025-07-01)
   - fix for window dragging detection
+
+0.17 (2025-07-30)
+  - Fix for the non-working tooltype SHOW_SNAPAREA_AT_START
+  - added icons created by EctoOne
 
 Thanks!
 	
