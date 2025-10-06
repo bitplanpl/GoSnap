@@ -40,8 +40,6 @@ ENUM    POS_NONE,
 
 CONST OS_314_VERSION=46 -> OS 3.1.4
 
-ENUM    EVENT_LEFTBUTTON=1
-
 DEF     bLeftButtonIsDown=FALSE,
         bOS4=FALSE,
         intuition=NIL:PTR TO intuitionbase,
@@ -59,7 +57,6 @@ DEF broker_mp=NIL:PTR TO mp,
 
 DEF ie:PTR TO inputevent
 
-
 DEF pubScreen=NIL:PTR TO screen,
     activeWindowOnScreen=NIL:PTR TO window
 
@@ -67,7 +64,6 @@ DEF wndDownButton=NIL:PTR TO window,
     wndUpButton=NIL:PTR TO window,
     wndDownX=-1, wndDownY=-1,
     wndUpX=-1, wndUpY=-1
-
 
 PROC main() HANDLE
 
@@ -225,7 +221,7 @@ PROC showError(excp, strError)
 
     DEF str
 
-    str:=String(150)
+    str:=String(250)
 
     IF (str)
 
@@ -295,9 +291,6 @@ PROC processMessages()
                             wndDownX:=wndDownButton.leftedge
                             wndDownY:=wndDownButton.topedge
 
-                                                  
-                            ->StringF(strTMP, '0 wndDown: \h (\d, \d) \s\n', wndDownButton, wndDownX, wndDownY, wndDownButton.title)
-                            ->zaloguj(strTMP)
                             wndUpButton:=NIL
                     ENDIF    
                     
@@ -305,8 +298,7 @@ PROC processMessages()
             ELSE
                 IF (bLeftButtonIsDown) 
                     
-                    Delay(5) -> oddaj czas Amidze, nich zaktualizuje liste systemowych okien
-
+                    Delay(5)
                     bLeftButtonIsDown:=FALSE
 
                     activeWindowOnScreen:=findActiveWindow()
@@ -317,9 +309,6 @@ PROC processMessages()
                                 wndUpX:=wndUpButton.leftedge
                                 wndUpY:=wndUpButton.topedge
                             
-                                ->Delay(1)
-                                ->StringF(strTMP,'0 wndUp: \h (\d, \d) \s\n', wndUpButton, wndUpX, wndUpY, wndUpButton.title)
-                                ->zaloguj(strTMP)
                             ENDIF
                     ENDIF
                     
@@ -364,19 +353,7 @@ PROC processMessages()
 
 ENDPROC
 
-PROC zaloguj(str)
-
-DEF fh=NIL
-
-    IF fh:=Open('RAM:gosnap.log', MODE_READWRITE)
-			Seek (fh, 0, OFFSET_END)
-			Write(fh, str, StrLen(str) );
-			Close(fh)
-            fh:=NIL
-	ENDIF
-
-ENDPROC
-
+/* Snap the window to the specified position */
 PROC snapWindow(wnd:PTR TO window, snapPosition)
 
 
@@ -522,11 +499,9 @@ PROC snapWindow(wnd:PTR TO window, snapPosition)
         IF bOS4 THEN WindowToFront(wnd)
     ENDIF
 
-    ->WriteF('menuBar: \d\n', iMenuBar)
 ENDPROC
 
-
-
+/* Check if the window is still open on the screen */
 PROC isWindowsStillOpen(wnd:PTR TO window)
     DEF w:PTR TO window
 
@@ -554,7 +529,9 @@ PROC cxFunction(cxm, co)
 
 ENDPROC
 
-
+/*
+    * Find the active window on the public screen
+*/
 PROC findActiveWindow()
 
     DEF _wnd:PTR TO window
@@ -577,12 +554,19 @@ PROC findActiveWindow()
 
 ENDPROC
 
+/*
+    * Check if the window is resizable
+*/  
 PROC isResizableWindow(wnd:PTR TO window)
 
     RETURN ((wnd.flags AND WFLG_SIZEGADGET ) = WFLG_SIZEGADGET ) ? TRUE : FALSE
 
 ENDPROC
 
+
+/*
+    * Determine if the mouse pointer is in a snap zone
+*/
 PROC getSnapPosision(x, y)
 
     DEF screenWidth, screenHeight
@@ -624,6 +608,7 @@ PROC getSnapPosision(x, y)
 
 ENDPROC 
 
+/* Show snap areas at the start of the program */
 PROC showSnapAreaAtStart()
 
 DEF winTopLeft=NIL, winTopRight=NIL, winDownLeft=NIL, winDownRight=NIL,
@@ -693,7 +678,7 @@ DEF winTopLeft=NIL, winTopRight=NIL, winDownLeft=NIL, winDownRight=NIL,
 
 ENDPROC
 
-
+/* Draw a snap area window */
 PROC drawSnapArea(x, y, width, height, color)
 
     DEF win=NIL:PTR TO window
