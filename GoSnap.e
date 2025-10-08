@@ -38,12 +38,14 @@ ENUM    POS_NONE,
         POS_UP,
         POS_DOWN
 
-CONST OS_314_VERSION=46 -> OS 3.1.4
+CONST OS_314_VERSION=46,    -> OS 3.1.4
+      OS_4_VERSION=51       -> OS 4.0
+      /* note: 3.1.4 is enough, but intuition.library v46 is required */
 
-DEF     bLeftButtonIsDown=FALSE,
-        bOS4=FALSE,
-        intuition=NIL:PTR TO intuitionbase,
-        iSnapMarginWidth=10, 
+DEF    bOS4=FALSE
+        
+     /* default values, can be overridden by tooltypes */  
+DEF  iSnapMarginWidth=10, 
         iSnapMarginHeight=10, 
         iSnapMarginPercent=3,
         bKeepMenuBar=TRUE, 
@@ -53,40 +55,42 @@ DEF     bLeftButtonIsDown=FALSE,
 DEF broker_mp=NIL:PTR TO mp, 
     broker=NIL, cxmsg=NIL, sig_broker,
     bCommodityActive=TRUE,
-    cocustom=NIL, signal=-1, cxobjsignal, task, cosignal
+    cocustom=NIL, signal=-1, cxobjsignal, cosignal
 
 DEF ie:PTR TO inputevent
+DEF pubScreen=NIL:PTR TO screen
 
-DEF pubScreen=NIL:PTR TO screen,
-    activeWindowOnScreen=NIL:PTR TO window
 
-DEF wndDownButton=NIL:PTR TO window,
-    wndUpButton=NIL:PTR TO window,
-    wndDownX=-1, wndDownY=-1,
-    wndUpX=-1, wndUpY=-1
 
 PROC main() HANDLE
 
     DEF ttypes=NIL,
         iCxPriority=0,
-        cxfunc=NIL
+        cxfunc=NIL, task=NIL,
+        intuition=NIL:PTR TO intuitionbase
 
+    -> Check Kickstart version
     IF (KickVersion(OS_314_VERSION)=FALSE) THEN Raise(ERR_KICKSTART)
-    IF KickVersion(51)  THEN bOS4:=TRUE
+    IF KickVersion(OS_4_VERSION)  THEN bOS4:=TRUE
 
-    intuition:=intuitionbase
-    cxbase:=NIL
-    iconbase:=NIL
-
-
+    
+    -> Lock the public screen
     pubScreen:=LockPubScreen(NIL)
     IF pubScreen=NIL THEN Raise(ERR_NO_PUBSCREEN)
 
+
+    -> open required libraries (intuition is already opened by E)
+    intuition:=intuitionbase
+    cxbase:=NIL
+    iconbase:=NIL
 
     IF (intuition.libnode.version <46 ) THEN Raise(ERR_NOINTUITION)
     IF (cxbase:=OpenLibrary('commodities.library', 39))=NIL THEN Raise(ERR_NOCOMMODITY)
     IF (iconbase:=OpenLibrary('icon.library', 39))=NIL THEN Raise(ERR_NOICON)
 
+
+
+    -> Read tooltypes
     IF (ttypes:=argArrayInit())=NIL THEN Raise(ERR_ARG_TT)
 
     iCxPriority:=argInt(ttypes, 'CX_PRIORITY', 0)
@@ -94,8 +98,6 @@ PROC main() HANDLE
     IF iCxPriority < -128 THEN iCxPriority := -127
 
     -> default snapMargin as 3% of screen size
-    
-
     iSnapMarginWidth:=argInt(ttypes, 'SNAP_MARGIN', -1)
     IF iSnapMarginWidth <> -1
         IF iSnapMarginWidth > 100 THEN iSnapMarginWidth :=100
@@ -114,12 +116,6 @@ PROC main() HANDLE
     ENDIF
 
 
-
-    ->WriteF('iSnapMarginWidth: \d\n', iSnapMarginWidth)
-    ->WriteF('iSnapMarginHeight: \d\n', iSnapMarginHeight)
-    
-
-    
     IF  StrCmp('YES', TrimStr(UpperStr(argString(ttypes, 'KEEP_MENUBAR', 'YES'))),3)
         bKeepMenuBar:=TRUE
     ELSE
@@ -130,16 +126,17 @@ PROC main() HANDLE
         bShowSnapArea:=TRUE
     ENDIF
 
-    ->WriteF('SNAP_MARGIN = \d\n', iSnapMargin)
 
+
+    -> Create a message port for the broker
     broker_mp:=CreateMsgPort()
     IF broker_mp=NIL THEN Raise(ERR_CREATE_BROKER_PORT)
     sig_broker:=Shl(1, broker_mp.sigbit)
 
-
+    -> Create the broker
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
-                   'GoSnap v0.17 by Krzysztof Donat',
+                   'GoSnap v0.18 by Krzysztof Donat',
                    'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
@@ -154,7 +151,7 @@ PROC main() HANDLE
     ->         CX custom function
     cxfunc:=eCodeCxCustom({cxFunction})
     IF cxfunc=NIL THEN   Raise(ERR_ECODE)
-    
+
     cocustom:=CxCustom(cxfunc, 0)
     AttachCxObj(broker, cocustom)
 
@@ -221,6 +218,7 @@ PROC showError(excp, strError)
 
     DEF str
 
+    -> risk: assuming that the error message will not exceed 250 characters, better way is calculate the length (todo)
     str:=String(250)
 
     IF (str)
@@ -228,11 +226,14 @@ PROC showError(excp, strError)
         StringF(str, 'GoSnap error (\d) - \s', excp, strError )
 
         IF wbmessage=NIL
+            -> started from CLI - print error to CLI
             WriteF(str)
         ELSE
+            -> Show a requester on Workbench screen
             EasyRequestArgs(
                 NIL,[SIZEOF easystruct,0,'GoSnap',str,'Oh, no...'],0,0)
         ENDIF
+        -> deallocate the string
         DisposeLink(str)
     ENDIF
 
@@ -240,14 +241,22 @@ ENDPROC
 
 PROC processMessages()
 
-    DEF  cxmsgid=0,  cxmsgtype=0, strTMP[256]:STRING,
-    sigrcvd, snapPosition=POS_NONE, done=FALSE, fhNIL, fhStd
+    DEF  cxmsgid=0,  cxmsgtype=0, 
+    sigrcvd, snapPosition=POS_NONE, done=FALSE,
+    activeWindowOnScreen=NIL:PTR TO window,
+
+    wndDownButton=NIL:PTR TO window,
+    wndUpButton=NIL:PTR TO window,
+    wndDownX=-1, wndDownY=-1,
+    wndUpX=-1, wndUpY=-1,
+    bLeftButtonIsDown=FALSE
 
 
     REPEAT
 
         sigrcvd:=Wait(SIGBREAKF_CTRL_C OR sig_broker OR cxobjsignal)
 
+        -> message from the broker
         IF sigrcvd AND sig_broker 
 
             WHILE cxmsg:=GetMsg(broker_mp)
@@ -257,15 +266,17 @@ PROC processMessages()
                 
                     SELECT cxmsgid
                         CASE CXCMD_DISABLE
-                        ->      WriteF('CXCMD_DISABLE\n')
+
                                 ActivateCxObj(broker, FALSE)
                                 bCommodityActive:=FALSE
+                        
                         CASE CXCMD_ENABLE
-                            ->    WriteF('CXCMD_ENABLE\n')
+                        
                                 ActivateCxObj(broker, TRUE)
                                 bCommodityActive:=TRUE
+                        
                         CASE CXCMD_KILL
-                            ->      WriteF('CXCMD_KILL\n')
+                            
                                 done:=TRUE
                             
                     ENDSELECT
@@ -273,11 +284,12 @@ PROC processMessages()
 
         ENDIF
 
+        -> CTRL-C pressed, only when running from CLI
         IF sigrcvd AND SIGBREAKF_CTRL_C 
             done:=TRUE
         ENDIF 
 
-
+        -> message from the custom CxObj
         IF sigrcvd AND cxobjsignal
 
             IF ((ie.qualifier AND IEQUALIFIER_LEFTBUTTON) = IEQUALIFIER_LEFTBUTTON)
@@ -298,7 +310,8 @@ PROC processMessages()
             ELSE
                 IF (bLeftButtonIsDown) 
                     
-                    Delay(5)
+                    
+                    Delay(5) -> work better on fast systems (todo: why...?)
                     bLeftButtonIsDown:=FALSE
 
                     activeWindowOnScreen:=findActiveWindow()
@@ -691,4 +704,4 @@ PROC drawSnapArea(x, y, width, height, color)
 ENDPROC win
 
 version:
-CHAR '$VER: GoSnap 0.17 (30.07.2025) http://www.bitplan.pl/amiga',0
+CHAR '$VER: GoSnap 0.18 (08.10.2025) http://www.bitplan.pl/amiga',0
