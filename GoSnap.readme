@@ -82,6 +82,10 @@ It was written in Amiga E, using the excellent E-VO compiler:
 http://aminet.net/package/dev/e/evo
 
 
+The source code for GoSnap is available on GitHub:
+https://github.com/bitplanpl/GoSnap
+
+
 History:
 0.13 (2025-05-18)
   - Initial release.
