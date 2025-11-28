@@ -5,8 +5,8 @@ Uploader:     Krzysztof Donat (bitplan.pl gmail.com)
 Author:       Krzysztof Donat (bitplan.pl gmail.com)
 Type:         util/cdity
 Replaces:     util/cdity/GoSnap.lha
-Version:      0.18
-Date:         08-10-2025
+Version:      0.19
+Date:         28-11-2025
 Architecture: m68k-amigaos >= 3.1.4
 Distribution: Aminet
 
