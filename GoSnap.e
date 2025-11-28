@@ -12,7 +12,9 @@ MODULE  'commodities',
         'dos',
         'dos/dos',
         'devices/inputevent',
-        'other/ecode'
+        'other/ecode',
+        'screennotify', 
+        'libraries/screennotify'
 
 
 ENUM    ERR_NONE=0,
@@ -60,7 +62,11 @@ DEF broker_mp=NIL:PTR TO mp,
 DEF ie:PTR TO inputevent
 DEF pubScreen=NIL:PTR TO screen
 
-
+->variables for ScreenNotify
+DEF screennotify_msgport=NIL:PTR TO mp,
+    screennotify_msg=NIL:PTR TO screennotifymessage,
+    screennotify_sig=0,
+    screennotify_handler=0
 
 PROC main() HANDLE
 
@@ -73,6 +79,17 @@ PROC main() HANDLE
     IF (KickVersion(OS_314_VERSION)=FALSE) THEN Raise(ERR_KICKSTART)
     IF KickVersion(OS_4_VERSION)  THEN bOS4:=TRUE
 
+
+    -> Set up ScreenNotify to monitor Workbench screen changes
+    -> if no screennotify.library, just continue without it 
+    screennotifybase:=OpenLibrary(SCREENNOTIFY_NAME, 1)
+    IF (screennotifybase)
+        screennotify_msgport := CreateMsgPort()    -> create port for screenNotify
+        IF screennotify_msgport
+            screennotify_sig:=Shl(1,screennotify_msgport.sigbit)
+            screennotify_handler := AddWorkbenchClient(screennotify_msgport, 0)
+        ENDIF    
+    ENDIF
     
     -> Lock the public screen
     pubScreen:=LockPubScreen(NIL)
@@ -195,6 +212,19 @@ PROC main() HANDLE
 
         IF pubScreen THEN UnlockPubScreen(NIL, pubScreen)
 
+        IF screennotify_handler
+            WHILE (RemWorkbenchClient(screennotify_handler) = FALSE) 
+                Delay(10);
+            ENDWHILE
+        ENDIF
+
+        IF screennotify_msgport THEN DeleteMsgPort(screennotify_msgport)
+        
+        IF screennotifybase  THEN   CloseLibrary(screennotifybase)
+        
+
+
+    
 
         SELECT exception
             CASE ERR_ARG_TT;        showError(exception, 'could not init tooltype arg array\n')
@@ -254,7 +284,7 @@ PROC processMessages()
 
     REPEAT
 
-        sigrcvd:=Wait(SIGBREAKF_CTRL_C OR sig_broker OR cxobjsignal)
+        sigrcvd:=Wait(SIGBREAKF_CTRL_C OR sig_broker OR cxobjsignal OR screennotify_sig)
 
         -> message from the broker
         IF sigrcvd AND sig_broker 
@@ -282,6 +312,39 @@ PROC processMessages()
                     ENDSELECT
             ENDWHILE
 
+        ENDIF
+
+        IF sigrcvd AND screennotify_sig 
+            WHILE screennotify_msg:=GetMsg(screennotify_msgport)
+
+                IF (screennotify_msg.type = SCREENNOTIFY_TYPE_WORKBENCH)
+                    
+                    IF (screennotify_msg.value = 0)
+
+                        IF pubScreen 
+                            UnlockPubScreen(NIL, pubScreen)
+                            pubScreen:=NIL
+                        ENDIF
+                    ENDIF
+
+                    IF (screennotify_msg.value = 1)
+                        Delay(10)
+                        
+                        pubScreen:=LockPubScreen(NIL)
+                        
+                        -> recalculate percent snap margins after wb screen change
+                        IF (iSnapMarginPercent > 0) AND (iSnapMarginPercent <=15)  
+                            iSnapMarginWidth:= (($FFFF AND pubScreen.width)* iSnapMarginPercent)/100
+                            iSnapMarginHeight:= (($FFFF AND pubScreen.height) * iSnapMarginPercent)/100
+                        ENDIF
+
+
+                    ENDIF
+                    
+                ENDIF
+
+                ReplyMsg(screennotify_msg)
+            ENDWHILE           
         ENDIF
 
         -> CTRL-C pressed, only when running from CLI
@@ -336,16 +399,17 @@ PROC processMessages()
                 IF (wndDownX<>wndUpX) OR (wndDownY<>wndUpY)
                     ->WriteF('releasing:  wndDownX<>wndUpX\n')
                     -> Was the mouse cursor in the snapping zone?
-                    snapPosition:=getSnapPosision(pubScreen.mousex, pubScreen.mousey)
-                    ->WriteF('releasing:  snapPosition: \d\n', snapPosition)
-                    IF (snapPosition<>POS_NONE)
-                        -> Then it’s a snap!
-                        ->WriteF('releasing:  SNAP!\n')
-                    
-                        snapWindow(wndDownButton, snapPosition)
-                    ENDIF
+                    IF pubScreen
+                            snapPosition:=getSnapPosision(pubScreen.mousex, pubScreen.mousey)
+                            ->WriteF('releasing:  snapPosition: \d\n', snapPosition)
+                            IF (snapPosition<>POS_NONE)
+                                -> Then it’s a snap!
+                                ->WriteF('releasing:  SNAP!\n')
+                            
+                                snapWindow(wndDownButton, snapPosition)
+                            ENDIF
                         
-                    
+                    ENDIF                    
                           
                 ENDIF
 
@@ -372,6 +436,7 @@ PROC snapWindow(wnd:PTR TO window, snapPosition)
 
     DEF newWidth, newHeight, newX, newY, iMenuBar=0, iGap=1,
         maxHeight, minHeigth, maxWidth, minWidth
+
 
     IF (bKeepMenuBar = TRUE)
          iMenuBar   := pubScreen.barheight
@@ -549,6 +614,8 @@ PROC findActiveWindow()
 
     DEF _wnd:PTR TO window
 
+    IF pubScreen=NIL THEN RETURN NIL
+
     Forbid()
     _wnd:=pubScreen.firstwindow
 
@@ -628,6 +695,8 @@ DEF winTopLeft=NIL, winTopRight=NIL, winDownLeft=NIL, winDownRight=NIL,
     winTop=NIL, winDown=NIL, winLeft=NIL, winRight=NIL,
     x,y, width, height
 
+    IF pubScreen=NIL THEN RETURN
+
     -> topLeft
     x:=0
     y:=0
@@ -704,4 +773,4 @@ PROC drawSnapArea(x, y, width, height, color)
 ENDPROC win
 
 version:
-CHAR '$VER: GoSnap 0.18 (08.10.2025) http://www.bitplan.pl/amiga',0
+CHAR '$VER: GoSnap 0.19 (28.11.2025) http://www.bitplan.pl/amiga',0

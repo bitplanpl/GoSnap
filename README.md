@@ -78,8 +78,6 @@ to donate and help keep the author caffeinated:
 
 https://www.paypal.me/krzysztofdonat
 
-
-GoSnap is an entry into the Amiga 40 Tools Jam 2025 in the Commodity category.
 It was written in Amiga E, using the excellent E-VO compiler:
 http://aminet.net/package/dev/e/evo
 
@@ -105,6 +103,10 @@ History:
 
 0.18 (2025-10-08)
   - optimization fixes
+
+0.19 (2025-11-28)
+  - added support for ScreenNotify to monitor Workbench screen changes
+    (optionally, works if the screennotify.library is present in the system)
 
 Thanks!
 ```	
