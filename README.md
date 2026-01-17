@@ -6,11 +6,7 @@ Author:       Krzysztof Donat (bitplan.pl gmail.com)
 Type:         util/cdity
 Replaces:     util/cdity/GoSnap.lha
 Version:      0.20
-<<<<<<< HEAD
-Date:         28-11-2025
-=======
 Date:         17-01-2026
->>>>>>> 0915e87 (0.20: added: disable window snapping while holding SHIFT)
 Architecture: m68k-amigaos >= 3.1.4
 Distribution: Aminet
 
