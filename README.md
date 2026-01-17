@@ -6,7 +6,11 @@ Author:       Krzysztof Donat (bitplan.pl gmail.com)
 Type:         util/cdity
 Replaces:     util/cdity/GoSnap.lha
 Version:      0.20
+<<<<<<< HEAD
 Date:         28-11-2025
+=======
+Date:         17-01-2026
+>>>>>>> 0915e87 (0.20: added: disable window snapping while holding SHIFT)
 Architecture: m68k-amigaos >= 3.1.4
 Distribution: Aminet
 
@@ -83,30 +87,34 @@ http://aminet.net/package/dev/e/evo
 
 
 History:
-0.13 (2025-05-18)
-  - Initial release.
 
-0.14 (2025-05-19)
-  - fix for snapping non-resizable windows
+0.20 (2026-01-17)
+  - added: disable window snapping while holding SHIFT
+
+0.19 (2025-11-28)
+  - added support for ScreenNotify to monitor Workbench screen changes
+    (optionally, works if the screennotify.library is present in the system)
+
+0.18 (2025-10-08)
+  - optimization fixes
+
+0.17 (2025-07-30)
+  - Fix for the non-working tooltype SHOW_SNAPAREA_AT_START
+  - added icons created by EctoOne
+
+0.16 (2025-07-01)
+  - fix for window dragging detection
 
 0.15 (2025-05-20)
   - Added ToolType parameter SNAP_MARGINPCT, defining the snap area 
     as a percentage of the screen width/height.
   - improved calculation of snapped window positions.
 
-0.16 (2025-07-01)
-  - fix for window dragging detection
+0.14 (2025-05-19)
+  - fix for snapping non-resizable windows
 
-0.17 (2025-07-30)
-  - Fix for the non-working tooltype SHOW_SNAPAREA_AT_START
-  - added icons created by EctoOne
-
-0.18 (2025-10-08)
-  - optimization fixes
-
-0.19 (2025-11-28)
-  - added support for ScreenNotify to monitor Workbench screen changes
-    (optionally, works if the screennotify.library is present in the system)
+0.13 (2025-05-18)
+  - Initial release.
 
 Thanks!
 ```	

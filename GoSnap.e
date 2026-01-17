@@ -153,7 +153,7 @@ PROC main() HANDLE
     -> Create the broker
     broker:=CxBroker([NB_VERSION, 0,
                    'GoSnap',   -> String to identify this broker
-                   'GoSnap v0.18 by Krzysztof Donat',
+                   'GoSnap v0.20 by Krzysztof Donat',
                    'Snaps windows to screen edges.',
                     NBU_UNIQUE, 0, iCxPriority, 0,
                     broker_mp, 0]:newbroker, NIL)
@@ -185,17 +185,14 @@ PROC main() HANDLE
     task:=FindTask(NIL)
     cosignal:=CxSignal(task, signal)
     AttachCxObj(cocustom, cosignal)
-    ActivateCxObj(broker, TRUE)
 
-    
+    ActivateCxObj(broker, TRUE)
 
     IF bShowSnapArea=TRUE THEN showSnapAreaAtStart()
 
     processMessages()
 
     EXCEPT DO
-
-
         
         IF signal<>-1 THEN FreeSignal(signal)
 
@@ -222,10 +219,6 @@ PROC main() HANDLE
         
         IF screennotifybase  THEN   CloseLibrary(screennotifybase)
         
-
-
-    
-
         SELECT exception
             CASE ERR_ARG_TT;        showError(exception, 'could not init tooltype arg array\n')
             CASE ERR_KICKSTART;     showError(exception, 'needs Kickstart v46+ (OS 3.1.4 or higher)\n')	
@@ -237,9 +230,7 @@ PROC main() HANDLE
             CASE ERR_CXERR;         showError(exception, 'could not activate broker\n')
             CASE ERR_ECODE;         showError(exception, 'ran out of memory in eCodeCxCustom()\n')
             CASE ERR_SIGNAL;        showError(exception, 'could not allocate signal\n')
-            CASE ERR_NO_PUBSCREEN;  showError(exception, 'could not lock public screen \aWorkbench\a\n')
-        
-        
+            CASE ERR_NO_PUBSCREEN;  showError(exception, 'could not lock public screen \aWorkbench\a\n')           
         ENDSELECT
 
 ENDPROC
@@ -248,8 +239,7 @@ PROC showError(excp, strError)
 
     DEF str
 
-    -> risk: assuming that the error message will not exceed 250 characters, better way is calculate the length (todo)
-    str:=String(250)
+    str:=String( StrLen(strError)  + 64)
 
     IF (str)
 
@@ -289,11 +279,13 @@ PROC processMessages()
         -> message from the broker
         IF sigrcvd AND sig_broker 
 
+
+
             WHILE cxmsg:=GetMsg(broker_mp)
                 cxmsgid:=CxMsgID(cxmsg)
                 cxmsgtype:=CxMsgType(cxmsg)
                 ReplyMsg(cxmsg)
-                
+
                     SELECT cxmsgid
                         CASE CXCMD_DISABLE
 
@@ -308,6 +300,8 @@ PROC processMessages()
                         CASE CXCMD_KILL
                             
                                 done:=TRUE
+                        
+                
                             
                     ENDSELECT
             ENDWHILE
@@ -355,6 +349,8 @@ PROC processMessages()
         -> message from the custom CxObj
         IF sigrcvd AND cxobjsignal
 
+
+
             IF ((ie.qualifier AND IEQUALIFIER_LEFTBUTTON) = IEQUALIFIER_LEFTBUTTON)
                 IF (bLeftButtonIsDown=FALSE)
 
@@ -395,22 +391,28 @@ PROC processMessages()
             IF (wndDownButton  AND (wndDownButton=wndUpButton))
                 ->Delay(1)
                 ->WriteF('releasing:  wndDownButton=wndUpButton\n')
-                -> Did the window's position change?
-                IF (wndDownX<>wndUpX) OR (wndDownY<>wndUpY)
-                    ->WriteF('releasing:  wndDownX<>wndUpX\n')
-                    -> Was the mouse cursor in the snapping zone?
-                    IF pubScreen
-                            snapPosition:=getSnapPosision(pubScreen.mousex, pubScreen.mousey)
-                            ->WriteF('releasing:  snapPosition: \d\n', snapPosition)
-                            IF (snapPosition<>POS_NONE)
-                                -> Then it’s a snap!
-                                ->WriteF('releasing:  SNAP!\n')
+
+                -> Was the Shift key NOT pressed during the operation?
+                IF (((ie.qualifier AND IEQUALIFIER_LSHIFT) <> IEQUALIFIER_LSHIFT) AND ((ie.qualifier AND IEQUALIFIER_RSHIFT) <> IEQUALIFIER_RSHIFT))
+
+                    -> Did the window's position change?
+                    IF (wndDownX<>wndUpX) OR (wndDownY<>wndUpY)
+                        ->WriteF('releasing:  wndDownX<>wndUpX\n')
+                        -> Was the mouse cursor in the snapping zone?
+                        IF pubScreen
+                                snapPosition:=getSnapPosision(pubScreen.mousex, pubScreen.mousey)
+                                ->WriteF('releasing:  snapPosition: \d\n', snapPosition)
+                                IF (snapPosition<>POS_NONE)
+                                    -> Then it’s a snap!
+                                    ->WriteF('releasing:  SNAP!\n')
+                                    
+                                    snapWindow(wndDownButton, snapPosition)
+                                
+                                ENDIF
                             
-                                snapWindow(wndDownButton, snapPosition)
-                            ENDIF
-                        
-                    ENDIF                    
-                          
+                        ENDIF                    
+                            
+                    ENDIF
                 ENDIF
 
                 wndDownButton:=NIL
@@ -773,4 +775,4 @@ PROC drawSnapArea(x, y, width, height, color)
 ENDPROC win
 
 version:
-CHAR '$VER: GoSnap 0.19 (28.11.2025) http://www.bitplan.pl/amiga',0
+CHAR '$VER: GoSnap 0.20 (17.01.2026) http://www.bitplan.pl/amiga',0
